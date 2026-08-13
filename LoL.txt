@@ -1,0 +1,1778 @@
+-- =============================================
+--   Rivals Hub — Full Feature Script
+--   UI: Linoria Library
+--   Built from scratch — Pro Scripter
+-- =============================================
+
+local repo = "https://raw.githubusercontent.com/xyznick/UELinoriaLib/main/"
+local Library      = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager  = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = getgenv().Options
+local Toggles = getgenv().Toggles
+
+Library.ShowCustomCursor = true
+Library.NotifySide       = "Left"
+
+-- =============================================
+--   Services
+-- =============================================
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService  = game:GetService("UserInputService")
+local lp               = Players.LocalPlayer
+
+-- =============================================
+--   Window
+-- =============================================
+
+local Window = Library:CreateWindow({
+    Title            = "Rivals Hub",
+    Center           = true,
+    AutoShow         = true,
+    Resizable        = true,
+    ShowCustomCursor = true,
+    TabPadding       = 8,
+    MenuFadeTime     = 0.2,
+})
+
+-- =============================================
+--   Tabs
+-- =============================================
+
+local Tabs = {
+    Weapons    = Window:AddTab("Weapons"),
+    VoidSpam   = Window:AddTab("Void Spam"),
+    Katana     = Window:AddTab("Katana"),
+    Spoof      = Window:AddTab("Spoof"),
+    Teleport   = Window:AddTab("Teleport"),
+    Hitbox     = Window:AddTab("Hitbox"),
+    UISettings = Window:AddTab("UI Settings"),
+}
+
+-- =============================================
+--   Safe Require
+-- =============================================
+
+local function safeRequire(obj)
+    local ok, result = pcall(require, obj)
+    return ok and result or nil
+end
+
+-- =============================================
+--   Module References
+-- =============================================
+
+local FighterController = safeRequire(
+    lp.PlayerScripts:WaitForChild("Controllers"):WaitForChild("FighterController")
+)
+
+local MechanicsController = safeRequire(
+    lp.PlayerScripts:WaitForChild("Controllers"):WaitForChild("MechanicsController")
+)
+
+local EnumLibrary = safeRequire(
+    ReplicatedStorage:WaitForChild("Modules"):WaitForChild("EnumLibrary")
+)
+
+-- =============================================
+--   Fighter Helpers
+-- =============================================
+
+local function getLocalFighter()
+    if not FighterController then return nil end
+    local ok, f = pcall(function() return FighterController.LocalFighter end)
+    return ok and f or nil
+end
+
+local function getAllItems()
+    local items = {}
+    local fighter = getLocalFighter()
+    if not fighter then return items end
+    if fighter.Items then
+        for _, item in pairs(fighter.Items) do
+            table.insert(items, item)
+        end
+    end
+    return items
+end
+
+local function getItemByName(name)
+    for _, item in pairs(getAllItems()) do
+        if item.Name == name then return item end
+    end
+    return nil
+end
+
+local function getPlayerList()
+    local list = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= lp then table.insert(list, p.Name) end
+    end
+    return list
+end
+
+-- ============================================================
+--   TAB 1 — WEAPONS
+-- ============================================================
+
+local WeaponLeft  = Tabs.Weapons:AddLeftGroupbox("Universal Gun")
+local WeaponRight = Tabs.Weapons:AddRightGroupbox("Bow & Daggers")
+local TripBox     = Tabs.Weapons:AddLeftGroupbox("Tripmines ESP")
+
+-- =============================================
+--   No Shoot Cooldown
+-- =============================================
+
+local noCooldownConn = nil
+WeaponLeft:AddToggle("NoShootCooldown", {
+    Text     = "No Shoot Cooldown",
+    Default  = false,
+    Tooltip  = "Removes shoot cooldown on all weapons",
+    Callback = function(val)
+        if val then
+            noCooldownConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    for _, item in pairs(getAllItems()) do
+                        if rawget(item, "_shoot_cooldown") ~= nil then
+                            item._shoot_cooldown = 0
+                        end
+                        if rawget(item, "_use_cooldown") ~= nil then
+                            item._use_cooldown = 0
+                        end
+                        if rawget(item, "_shoot_cooldown_no_ammo") ~= nil then
+                            item._shoot_cooldown_no_ammo = 0
+                        end
+                    end
+                end)
+            end)
+        else
+            if noCooldownConn then
+                noCooldownConn:Disconnect()
+                noCooldownConn = nil
+            end
+        end
+    end,
+})
+
+-- =============================================
+--   Instant Reload
+-- =============================================
+
+local instantReloadConn = nil
+WeaponLeft:AddToggle("InstantReload", {
+    Text     = "Instant Reload",
+    Default  = false,
+    Tooltip  = "Makes all weapons reload instantly",
+    Callback = function(val)
+        if val then
+            instantReloadConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    for _, item in pairs(getAllItems()) do
+                        if rawget(item, "_reload_cooldown") ~= nil then
+                            item._reload_cooldown = 0
+                        end
+                        if rawget(item, "_reload_cancel_cooldown") ~= nil then
+                            item._reload_cancel_cooldown = 0
+                        end
+                        if rawget(item, "_reload_cancel_expiration") ~= nil then
+                            item._reload_cancel_expiration = 0
+                        end
+                    end
+                end)
+            end)
+        else
+            if instantReloadConn then
+                instantReloadConn:Disconnect()
+                instantReloadConn = nil
+            end
+        end
+    end,
+})
+
+-- =============================================
+--   Infinite Ammo
+-- =============================================
+
+local infiniteAmmoConn = nil
+WeaponLeft:AddToggle("InfiniteAmmo", {
+    Text     = "Infinite Ammo",
+    Default  = false,
+    Tooltip  = "Hooks ammo signal to prevent running out",
+    Callback = function(val)
+        if val then
+            infiniteAmmoConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local fighter = getLocalFighter()
+                    if not fighter then return end
+                    fighter:SetAttribute("InfiniteAmmoReserve", true)
+                    for _, item in pairs(getAllItems()) do
+                        pcall(function()
+                            if item:Get("Ammo") ~= nil
+                                and item:Get("Ammo") <= 1 then
+                                item:SimulateInputFromGameplayMechanic(
+                                    "StartReloading", true
+                                )
+                            end
+                        end)
+                    end
+                end)
+            end)
+        else
+            if infiniteAmmoConn then
+                infiniteAmmoConn:Disconnect()
+                infiniteAmmoConn = nil
+            end
+            pcall(function()
+                local fighter = getLocalFighter()
+                if fighter then
+                    fighter:SetAttribute("InfiniteAmmoReserve", false)
+                end
+            end)
+        end
+    end,
+})
+
+-- =============================================
+--   Rapid Burst
+-- =============================================
+
+local rapidBurstConn = nil
+WeaponLeft:AddToggle("RapidBurst", {
+    Text     = "Rapid Burst Fire",
+    Default  = false,
+    Tooltip  = "Resets burst count every frame",
+    Callback = function(val)
+        if val then
+            rapidBurstConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    for _, item in pairs(getAllItems()) do
+                        if rawget(item, "_burst_count") ~= nil then
+                            item._burst_count = 0
+                        end
+                        if rawget(item, "_last_shot") ~= nil then
+                            item._last_shot = 0
+                        end
+                    end
+                end)
+            end)
+        else
+            if rapidBurstConn then
+                rapidBurstConn:Disconnect()
+                rapidBurstConn = nil
+            end
+        end
+    end,
+})
+
+-- =============================================
+--   Bow Features
+-- =============================================
+
+WeaponRight:AddLabel("Bow Features")
+
+local instantChargeConn = nil
+WeaponRight:AddToggle("InstantCharge", {
+    Text     = "Instant Bow Charge",
+    Default  = false,
+    Tooltip  = "Forces bow to always be at max charge",
+    Callback = function(val)
+        if val then
+            instantChargeConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local bow = getItemByName("Bow")
+                    if not bow then return end
+                    if rawget(bow, "_is_charging") ~= nil then
+                        bow._is_charging = true
+                    end
+                    if rawget(bow, "_shoot_cooldown") ~= nil then
+                        bow._shoot_cooldown = 0
+                    end
+                    if rawget(bow, "_reload_cooldown") ~= nil then
+                        bow._reload_cooldown = 0
+                    end
+                end)
+            end)
+        else
+            if instantChargeConn then
+                instantChargeConn:Disconnect()
+                instantChargeConn = nil
+            end
+        end
+    end,
+})
+
+WeaponRight:AddButton({
+    Text = "Force Max Charge Now",
+    Func = function()
+        pcall(function()
+            local bow = getItemByName("Bow")
+            if not bow then
+                Library:Notify("Bow not found in loadout!", 3)
+                return
+            end
+            bow._is_charging     = true
+            bow._shoot_cooldown  = 0
+            bow._reload_cooldown = 0
+            bow._charge_hash     = bow._charge_hash + 1
+            Library:Notify("Bow forced to max charge!", 3)
+        end)
+    end,
+})
+
+WeaponRight:AddDivider()
+
+-- =============================================
+--   Daggers Features
+-- =============================================
+
+WeaponRight:AddLabel("Daggers Features")
+
+local infiniteDaggersConn = nil
+WeaponRight:AddToggle("InfiniteDaggers", {
+    Text     = "Infinite Daggers",
+    Default  = false,
+    Tooltip  = "Prevents daggers from running out",
+    Callback = function(val)
+        if val then
+            infiniteDaggersConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local daggers = getItemByName("Daggers")
+                    if not daggers then return end
+                    if rawget(daggers, "_reload_cooldown") ~= nil then
+                        daggers._reload_cooldown = 0
+                    end
+                    if rawget(daggers, "_shoot_cooldown") ~= nil then
+                        daggers._shoot_cooldown = 0
+                    end
+                    if rawget(daggers, "_reload_delay") ~= nil then
+                        daggers._reload_delay = 0
+                    end
+                end)
+            end)
+        else
+            if infiniteDaggersConn then
+                infiniteDaggersConn:Disconnect()
+                infiniteDaggersConn = nil
+            end
+        end
+    end,
+})
+
+local rapidDaggerConn = nil
+WeaponRight:AddToggle("RapidDaggers", {
+    Text     = "Rapid Dagger Throw",
+    Default  = false,
+    Tooltip  = "Removes throw cooldown for daggers",
+    Callback = function(val)
+        if val then
+            rapidDaggerConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local daggers = getItemByName("Daggers")
+                    if not daggers then return end
+                    daggers._shoot_cooldown  = 0
+                    daggers._reload_cooldown = 0
+                    daggers._burst_count     = 0
+                    daggers._last_shot       = 0
+                end)
+            end)
+        else
+            if rapidDaggerConn then
+                rapidDaggerConn:Disconnect()
+                rapidDaggerConn = nil
+            end
+        end
+    end,
+})
+
+-- =============================================
+--   Tripmines ESP
+-- =============================================
+
+local tripESPEnabled = false
+local tripHighlights = {}
+local tripBillboards = {}
+local tripColorESP   = Color3.fromRGB(255, 50, 50)
+local tripDetectConn = nil
+
+local function cleanTripESP()
+    for _, h in pairs(tripHighlights) do pcall(function() h:Destroy() end) end
+    for _, b in pairs(tripBillboards) do pcall(function() b:Destroy() end) end
+    tripHighlights = {}
+    tripBillboards = {}
+end
+
+local function isTripmine(obj)
+    if not obj then return false end
+    local name = obj.Name:lower()
+    return name:find("tripmine") or name:find("subspace") or name:find("mine")
+end
+
+local function addTripESP(obj)
+    if not obj:IsA("Model") and not obj:IsA("BasePart") then return end
+    if not isTripmine(obj) then return end
+
+    local highlight = Instance.new("SelectionBox")
+    highlight.Color3              = tripColorESP
+    highlight.LineThickness       = 0.05
+    highlight.SurfaceTransparency = 0.6
+    highlight.SurfaceColor3       = tripColorESP
+    highlight.Adornee             = obj
+    highlight.Parent              = workspace
+    table.insert(tripHighlights, highlight)
+
+    local part = obj:IsA("BasePart") and obj
+        or obj:FindFirstChildWhichIsA("BasePart")
+
+    if part then
+        local billboard = Instance.new("BillboardGui")
+        billboard.AlwaysOnTop = true
+        billboard.Size        = UDim2.new(0, 120, 0, 40)
+        billboard.StudsOffset = Vector3.new(0, 3, 0)
+        billboard.Adornee     = part
+        billboard.Parent      = part
+
+        local label = Instance.new("TextLabel")
+        label.Size                   = UDim2.new(1, 0, 1, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3             = tripColorESP
+        label.TextStrokeTransparency = 0
+        label.TextScaled             = true
+        label.Font                   = Enum.Font.GothamBold
+        label.Text                   = "TRIPMINE"
+        label.Parent                 = billboard
+
+        local distConn
+        distConn = RunService.RenderStepped:Connect(function()
+            if not part or not part.Parent then
+                distConn:Disconnect()
+                pcall(function() billboard:Destroy() end)
+                return
+            end
+            local char = lp.Character
+            if char then
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local dist = math.floor(
+                        (hrp.Position - part.Position).Magnitude
+                    )
+                    label.Text = "TRIPMINE\n" .. dist .. " studs"
+                end
+            end
+        end)
+
+        table.insert(tripBillboards, billboard)
+    end
+
+    obj.AncestryChanged:Connect(function()
+        if not obj:IsDescendantOf(workspace) then
+            pcall(function() highlight:Destroy() end)
+        end
+    end)
+end
+
+local function scanTripmines()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if isTripmine(obj) then addTripESP(obj) end
+    end
+end
+
+TripBox:AddToggle("TripmineESP", {
+    Text     = "Tripmine ESP",
+    Default  = false,
+    Tooltip  = "Shows all placed tripmines with distance",
+    Callback = function(val)
+        tripESPEnabled = val
+        if val then
+            scanTripmines()
+            tripDetectConn = workspace.DescendantAdded:Connect(function(obj)
+                if isTripmine(obj) then
+                    task.wait(0.1)
+                    addTripESP(obj)
+                    Library:Notify("Tripmine Placed!", 3)
+                end
+            end)
+        else
+            cleanTripESP()
+            if tripDetectConn then
+                tripDetectConn:Disconnect()
+                tripDetectConn = nil
+            end
+        end
+    end,
+})
+
+TripBox:AddLabel("ESP Color"):AddColorPicker("TripESPColor", {
+    Default  = Color3.fromRGB(255, 50, 50),
+    Title    = "Tripmine ESP Color",
+    Callback = function(val)
+        tripColorESP = val
+        for _, h in pairs(tripHighlights) do
+            pcall(function()
+                h.Color3        = val
+                h.SurfaceColor3 = val
+            end)
+        end
+        for _, b in pairs(tripBillboards) do
+            pcall(function()
+                local label = b:FindFirstChildWhichIsA("TextLabel")
+                if label then label.TextColor3 = val end
+            end)
+        end
+    end,
+})
+
+TripBox:AddButton({
+    Text = "Rescan Tripmines",
+    Func = function()
+        cleanTripESP()
+        scanTripmines()
+        Library:Notify("Tripmines rescanned!", 2)
+    end,
+})
+
+TripBox:AddToggle("TripNoCD", {
+    Text     = "No Place Cooldown",
+    Default  = false,
+    Tooltip  = "Remove tripmine placement cooldown",
+    Callback = function(val)
+        if val then
+            RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local trip = getItemByName("Subspace Tripmine")
+                        or getItemByName("Tripmine")
+                    if trip and rawget(trip, "_use_cooldown") then
+                        trip._use_cooldown = 0
+                    end
+                end)
+            end)
+        end
+    end,
+})
+
+-- ============================================================
+--   TAB 2 — VOID SPAM
+-- ============================================================
+
+local VoidLeft  = Tabs.VoidSpam:AddLeftGroupbox("Void Spam")
+local VoidRight = Tabs.VoidSpam:AddRightGroupbox("Settings")
+
+-- =============================================
+--   Void State
+-- =============================================
+
+local voidHRPRef     = nil
+local savedClientC   = nil
+local savedClientV   = nil
+local savedClientVA  = nil
+
+-- Camera lock state — saved when feature turns on
+local lockedCameraC  = nil
+
+local voidHBConn     = nil
+local velSpikeConn   = nil
+
+-- =============================================
+--   Void Ranges (from dex findings)
+--   Y: 0 - 590000
+--   X: 0 - 450000
+--   Z: 0 - 230000
+-- =============================================
+
+local VOID_X_MAX = 450000
+local VOID_Y_MAX = 590000
+local VOID_Z_MAX = 230000
+
+local VoidIntensity = 1.0  -- 0.0 to 1.0 scale
+
+local function betterRandom(mi, ma, dmi, dma)
+    local val = math.random(mi, ma)
+    local attempts = 0
+    repeat
+        val = math.random(mi, ma)
+        attempts += 1
+    until val < dmi or val > dma or attempts > 20
+    return val
+end
+
+local function getVoidPos()
+    local xi = math.floor(VOID_X_MAX * VoidIntensity)
+    local yi = math.floor(VOID_Y_MAX * VoidIntensity)
+    local zi = math.floor(VOID_Z_MAX * VoidIntensity)
+
+    -- Exclude 0 zone (near origin = not voidy enough)
+    local xe = math.floor(xi * 0.5)
+    local ye = math.floor(yi * 0.5)
+    local ze = math.floor(zi * 0.5)
+
+    return Vector3.new(
+        betterRandom(-xi, xi, -xe, xe),
+        betterRandom(0,   yi,  0,  ye),  -- Y: 0 to 590k (above map)
+        betterRandom(-zi, zi, -ze, ze)
+    )
+end
+
+local function getVoidVel()
+    local xi = math.floor(VOID_X_MAX * VoidIntensity)
+    local yi = math.floor(VOID_Y_MAX * VoidIntensity)
+    local zi = math.floor(VOID_Z_MAX * VoidIntensity)
+    return Vector3.new(
+        math.random(-xi, xi),
+        math.random(-yi, yi),
+        math.random(-zi, zi)
+    )
+end
+
+-- =============================================
+--   Lock Camera CFrame when feature turns on
+-- =============================================
+
+local function lockCamera()
+    lockedCameraC = workspace.CurrentCamera.CFrame
+end
+
+local function applyCameraLock()
+    if lockedCameraC then
+        workspace.CurrentCamera.CFrame = lockedCameraC
+    end
+end
+
+-- =============================================
+--   Standard Void Spam
+-- =============================================
+
+local function startVoidSpam()
+    if voidHBConn then
+        voidHBConn:Disconnect()
+        voidHBConn = nil
+    end
+
+    lockCamera()
+
+    voidHBConn = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            local char = lp.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+
+            voidHRPRef   = hrp
+            savedClientC  = hrp.CFrame
+            savedClientV  = hrp.AssemblyLinearVelocity
+            savedClientVA = hrp.AssemblyAngularVelocity
+
+            local vPos = getVoidPos()
+            hrp.CFrame = CFrame.new(vPos)
+                * CFrame.Angles(math.pi, math.pi, math.pi)
+
+            hrp.AssemblyLinearVelocity  = getVoidVel()
+            hrp.AssemblyAngularVelocity = getVoidVel()
+        end)
+    end)
+
+    RunService:BindToRenderStep(
+        "VoidSync",
+        Enum.RenderPriority.First.Value,
+        function()
+            -- Restore position so client sees correct spot
+            if voidHRPRef and savedClientC then
+                pcall(function()
+                    voidHRPRef.CFrame = savedClientC
+                    voidHRPRef.AssemblyLinearVelocity  = savedClientV
+                    voidHRPRef.AssemblyAngularVelocity = savedClientVA
+                end)
+            end
+            -- Keep camera locked
+            applyCameraLock()
+        end
+    )
+end
+
+local function stopVoidSpam()
+    if voidHBConn then
+        voidHBConn:Disconnect()
+        voidHBConn = nil
+    end
+    pcall(function()
+        RunService:UnbindFromRenderStep("VoidSync")
+    end)
+    voidHRPRef    = nil
+    lockedCameraC = nil
+end
+
+-- =============================================
+--   Velocity Spike
+-- =============================================
+
+local velSpikeRate = 0.05
+local lastSpike    = 0
+
+local function startVelSpike()
+    if velSpikeConn then
+        velSpikeConn:Disconnect()
+        velSpikeConn = nil
+    end
+    velSpikeConn = RunService.Heartbeat:Connect(function()
+        if tick() - lastSpike < velSpikeRate then return end
+        lastSpike = tick()
+        pcall(function()
+            local char = lp.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            hrp.AssemblyLinearVelocity = getVoidVel()
+        end)
+    end)
+end
+
+local function stopVelSpike()
+    if velSpikeConn then
+        velSpikeConn:Disconnect()
+        velSpikeConn = nil
+    end
+end
+
+-- =============================================
+--   Anti Aim — uses ViewportCameras finding
+--   Locks server camera rotation
+--   while client camera stays where you look
+-- =============================================
+
+local antiAimConn     = nil
+local antiAimLocked   = nil  -- the fake rotation we send
+local UpdateCamRemote = ReplicatedStorage
+    :WaitForChild("Remotes")
+    :WaitForChild("Replication")
+    :WaitForChild("Fighter")
+    :FindFirstChild("UpdateCameraRotation")
+
+local Utility = safeRequire(
+    ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Utility")
+)
+
+local function startAntiAim()
+    -- Lock fake camera rotation when turned on
+    -- Sends a fixed rotation to server so server
+    -- thinks we look somewhere completely different
+    antiAimLocked = Vector2.new(
+        math.random() * math.pi * 2,
+        math.random() * math.pi * 2
+    )
+
+    antiAimConn = RunService.Heartbeat:Connect(function()
+        if not UpdateCamRemote then return end
+        if not Utility then return end
+        pcall(function()
+            -- Send fake encoded rotation to server
+            local encoded = Utility:EncodeCameraRotation(antiAimLocked)
+            UpdateCamRemote:FireServer(encoded, nil)
+        end)
+    end)
+end
+
+local function stopAntiAim()
+    if antiAimConn then
+        antiAimConn:Disconnect()
+        antiAimConn = nil
+    end
+    antiAimLocked = nil
+end
+
+-- =============================================
+--   UI Toggles
+-- =============================================
+
+VoidLeft:AddToggle("VoidSpam", {
+    Text     = "Standard Void Spam",
+    Default  = false,
+    Tooltip  = "TPs to void every frame then syncs back — camera stays locked",
+    Callback = function(val)
+        if val then
+            startVoidSpam()
+            Library:Notify("Void Spam Active!", 3)
+        else
+            stopVoidSpam()
+            Library:Notify("Void Spam Off", 2)
+        end
+    end,
+})
+
+VoidLeft:AddToggle("VelocitySpike", {
+    Text     = "Velocity Spike",
+    Default  = false,
+    Tooltip  = "Randomly spikes velocity — makes projectiles miss you",
+    Callback = function(val)
+        if val then
+            startVelSpike()
+        else
+            stopVelSpike()
+        end
+    end,
+})
+
+VoidLeft:AddDivider()
+
+-- =============================================
+--   Meta Void Spam
+--   Standard + Velocity Spike together
+--   = the meta combo
+-- =============================================
+
+VoidLeft:AddToggle("MetaVoidSpam", {
+    Text     = "Meta Void Spam",
+    Default  = false,
+    Tooltip  = "Standard Void + Velocity Spike — the meta combo",
+    Risky    = true,
+    Callback = function(val)
+        Toggles.VoidSpam:SetValue(val)
+        Toggles.VelocitySpike:SetValue(val)
+        if val then
+            Library:Notify("Meta Void Spam Active!", 3)
+        else
+            Library:Notify("Meta Void Spam Off", 2)
+        end
+    end,
+})
+
+VoidLeft:AddDivider()
+
+-- =============================================
+--   Anti Aim Toggle
+-- =============================================
+
+VoidLeft:AddToggle("AntiAim", {
+    Text     = "Anti Aim",
+    Default  = false,
+    Tooltip  = "Sends fake camera rotation to server — breaks enemy hit detection",
+    Risky    = true,
+    Callback = function(val)
+        if val then
+            startAntiAim()
+            Library:Notify("Anti Aim Active!", 3)
+        else
+            stopAntiAim()
+            Library:Notify("Anti Aim Off", 2)
+        end
+    end,
+})
+
+VoidLeft:AddButton({
+    Text = "Stop All Void Features",
+    Func = function()
+        Toggles.VoidSpam:SetValue(false)
+        Toggles.VelocitySpike:SetValue(false)
+        Toggles.MetaVoidSpam:SetValue(false)
+        Toggles.AntiAim:SetValue(false)
+        Library:Notify("All void features stopped!", 2)
+    end,
+})
+
+-- =============================================
+--   Settings
+-- =============================================
+
+VoidRight:AddSlider("VoidIntensitySlider", {
+    Text     = "Void Intensity",
+    Default  = 100,
+    Min      = 1,
+    Max      = 100,
+    Rounding = 0,
+    Suffix   = "%",
+    Tooltip  = "How extreme the void teleports are",
+    Callback = function(val)
+        VoidIntensity = val / 100
+    end,
+})
+
+VoidRight:AddSlider("VelSpikeRateSlider", {
+    Text     = "Spike Rate",
+    Default  = 5,
+    Min      = 1,
+    Max      = 20,
+    Rounding = 0,
+    Suffix   = "x",
+    Tooltip  = "How often velocity spikes fire",
+    Callback = function(val)
+        velSpikeRate = 0.1 / val
+    end,
+})
+
+VoidRight:AddLabel(
+    "Void Ranges:\nY: 0 to 590,000\nX: 0 to 450,000\nZ: 0 to 230,000\n\n"..
+    "Camera locks to where\nyou were looking when\nyou enabled void spam.",
+    true
+)
+
+-- ============================================================
+--   TAB 3 — KATANA
+-- ============================================================
+
+local KatLeft  = Tabs.Katana:AddLeftGroupbox("Katana Fast Deflect")
+local KatRight = Tabs.Katana:AddRightGroupbox("Info")
+
+local katanaLoopActive = false
+local katanaLoopThread = nil
+
+local function setFastKatanaDeflect()
+    task.wait(0.01)
+
+    for _, v in pairs(getgc(true)) do
+        if type(v) == "table" then
+            if rawget(v, "DeflectCooldown") then
+                rawset(v, "DeflectCooldown", 0.01)
+            end
+            if rawget(v, "DeflectDuration") then
+                rawset(v, "DeflectDuration", 0.01)
+            end
+        end
+    end
+
+    task.wait(0.01)
+
+    pcall(function()
+        local Modules = ReplicatedStorage:FindFirstChild("Modules")
+        if not Modules then return end
+        local lib = Modules:FindFirstChild("ItemLibrary")
+            or Modules:FindFirstChild("ItemLibrary", true)
+        if not lib then return end
+        local ItemLibrary = require(lib)
+        if ItemLibrary and ItemLibrary.Items then
+            for _, item in pairs(ItemLibrary.Items) do
+                if item.Name
+                    and string.find(item.Name:lower(), "katana") then
+                    item.DeflectCooldown = 0.01
+                    item.DeflectDuration = 0.01
+                end
+            end
+        end
+    end)
+
+    task.wait(0.01)
+
+    pcall(function()
+        local MeleeModule = safeRequire(
+            lp.PlayerScripts.Modules.ItemTypes.Melee
+        )
+        if not MeleeModule then return end
+        local oldNew = MeleeModule.new
+        MeleeModule.new = function(...)
+            local self = oldNew(...)
+            if self and self.Info and self.Info.Name
+                and string.find(self.Info.Name:lower(), "katana") then
+                self.Info.DeflectCooldown = 0.01
+                self.Info.DeflectDuration = 0.8
+            end
+            return self
+        end
+    end)
+end
+
+KatLeft:AddToggle("KatanaFastDeflect", {
+    Text     = "Fast Katana Deflect",
+    Default  = false,
+    Tooltip  = "Removes deflect cooldown and duration for katana",
+    Callback = function(val)
+        katanaLoopActive = val
+        if val then
+            task.wait(0.5)
+            setFastKatanaDeflect()
+            katanaLoopThread = task.spawn(function()
+                while katanaLoopActive do
+                    task.wait(3)
+                    if katanaLoopActive then
+                        pcall(setFastKatanaDeflect)
+                    end
+                end
+            end)
+            Library:Notify("Fast Katana Deflect Active!", 3)
+        else
+            if katanaLoopThread then
+                pcall(task.cancel, katanaLoopThread)
+                katanaLoopThread = nil
+            end
+            Library:Notify("Katana Deflect Off", 2)
+        end
+    end,
+})
+
+KatLeft:AddButton({
+    Text = "Apply Once Now",
+    Func = function()
+        task.spawn(setFastKatanaDeflect)
+        Library:Notify("Katana deflect applied!", 2)
+    end,
+})
+
+KatRight:AddLabel(
+    "Removes DeflectCooldown\nand DeflectDuration\nfrom the Katana module.\n\n"..
+    "Re-applies every 3 seconds\nto stay active after respawn.",
+    true
+)
+
+-- ============================================================
+--   TAB 4 — SPOOF
+-- ============================================================
+
+local SpoofLeft  = Tabs.Spoof:AddLeftGroupbox("Name Spoof")
+local SpoofRight = Tabs.Spoof:AddRightGroupbox("Level Spoof")
+
+local spoofConfig = {
+    enabled      = false,
+    clientName   = "kicia",
+    enemyName    = "rivalscheats.shop",
+    levelSpoof   = 1381,
+    levelEnabled = false,
+}
+
+local spoofLevelConn = nil
+
+SpoofLeft:AddToggle("NameSpoofEnabled", {
+    Text     = "Enable Name Spoof",
+    Default  = false,
+    Tooltip  = "Spoofs your name and all enemy names",
+    Callback = function(val)
+        spoofConfig.enabled = val
+        if val then
+            pcall(function()
+                lp.Name        = spoofConfig.clientName
+                lp.DisplayName = spoofConfig.clientName
+            end)
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= lp then
+                    pcall(function()
+                        player.Name        = spoofConfig.enemyName
+                        player.DisplayName = spoofConfig.enemyName
+                    end)
+                end
+            end
+            Library:Notify("Name spoof active!", 3)
+        else
+            Library:Notify("Name spoof off — rejoin to reset", 3)
+        end
+    end,
+})
+
+SpoofLeft:AddInput("YourSpoofName", {
+    Default          = "kicia",
+    Numeric          = false,
+    Finished         = true,
+    Text             = "Your Spoofed Name",
+    Placeholder      = "Enter your spoof name",
+    ClearTextOnFocus = false,
+    Callback         = function(val)
+        spoofConfig.clientName = val
+        if spoofConfig.enabled then
+            pcall(function()
+                lp.Name        = val
+                lp.DisplayName = val
+            end)
+        end
+    end,
+})
+
+SpoofLeft:AddInput("EnemySpoofName", {
+    Default          = "rivalscheats.shop",
+    Numeric          = false,
+    Finished         = true,
+    Text             = "Enemy Spoofed Name",
+    Placeholder      = "Enter enemy spoof name",
+    ClearTextOnFocus = false,
+    Callback         = function(val)
+        spoofConfig.enemyName = val
+    end,
+})
+
+SpoofLeft:AddButton({
+    Text = "Apply Names Now",
+    Func = function()
+        if not spoofConfig.enabled then
+            Library:Notify("Enable Name Spoof first!", 2)
+            return
+        end
+        pcall(function() lp.Name        = spoofConfig.clientName end)
+        pcall(function() lp.DisplayName = spoofConfig.clientName end)
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= lp then
+                pcall(function()
+                    player.Name        = spoofConfig.enemyName
+                    player.DisplayName = spoofConfig.enemyName
+                end)
+            end
+        end
+        Library:Notify("Names applied!", 2)
+    end,
+})
+
+Players.PlayerAdded:Connect(function(player)
+    if spoofConfig.enabled and player ~= lp then
+        task.wait(0.1)
+        pcall(function()
+            player.Name        = spoofConfig.enemyName
+            player.DisplayName = spoofConfig.enemyName
+        end)
+    end
+end)
+
+SpoofRight:AddToggle("LevelSpoofEnabled", {
+    Text     = "Enable Level Spoof",
+    Default  = false,
+    Tooltip  = "Spoofs your level every heartbeat",
+    Callback = function(val)
+        spoofConfig.levelEnabled = val
+        if val then
+            if not lp:GetAttribute("Level") then
+                Library:Notify("Level attribute not found!", 3)
+                Toggles.LevelSpoofEnabled:SetValue(false)
+                return
+            end
+            spoofLevelConn = RunService.Heartbeat:Connect(function()
+                pcall(function()
+                    local stats = lp:FindFirstChild("CustomLeaderstats")
+                    if stats then
+                        local lvl = stats:FindFirstChild("Level")
+                        if lvl then lvl.Value = spoofConfig.levelSpoof end
+                    end
+                    lp:SetAttribute("Level", spoofConfig.levelSpoof)
+                end)
+            end)
+            Library:Notify("Level spoof active: " .. spoofConfig.levelSpoof, 3)
+        else
+            if spoofLevelConn then
+                spoofLevelConn:Disconnect()
+                spoofLevelConn = nil
+            end
+            Library:Notify("Level spoof off", 2)
+        end
+    end,
+})
+
+SpoofRight:AddSlider("SpoofLevel", {
+    Text     = "Spoof Level",
+    Default  = 1381,
+    Min      = 1,
+    Max      = 9999,
+    Rounding = 0,
+    Tooltip  = "The level to display",
+    Callback = function(val)
+        spoofConfig.levelSpoof = val
+    end,
+})
+
+SpoofRight:AddButton({
+    Text = "Apply Level Now",
+    Func = function()
+        pcall(function()
+            local stats = lp:FindFirstChild("CustomLeaderstats")
+            if stats then
+                local lvl = stats:FindFirstChild("Level")
+                if lvl then lvl.Value = spoofConfig.levelSpoof end
+            end
+            lp:SetAttribute("Level", spoofConfig.levelSpoof)
+        end)
+        Library:Notify("Level set to " .. spoofConfig.levelSpoof, 2)
+    end,
+})
+
+-- ============================================================
+--   TAB 5 — TELEPORT
+-- ============================================================
+
+local TpLeft  = Tabs.Teleport:AddLeftGroupbox("Player Teleport")
+local TpRight = Tabs.Teleport:AddRightGroupbox("Settings")
+
+local tpConfig = {
+    autoTP      = false,
+    autoTarget  = nil,
+    autoDelay   = 1,
+    onlyInGame  = true,
+    stayOnTop   = true,  -- stay above their head
+}
+
+local autoTPThread = nil
+
+-- =============================================
+--   Visible / In-Game Check
+-- =============================================
+
+local function isPlayerInGame(player)
+    if not tpConfig.onlyInGame then return true end
+    if player == lp then return false end
+    local char = player.Character
+    if not char then return false end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    if not char:IsDescendantOf(workspace) then return false end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    local myChar = lp.Character
+    if myChar then
+        local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+        if myHRP then
+            local dist = (myHRP.Position - hrp.Position).Magnitude
+            if dist > 5000 then return false end
+        end
+    end
+    return true
+end
+
+-- =============================================
+--   Teleport: stay on top of target head
+-- =============================================
+
+local stayOnTopConn   = nil
+local stayOnTopTarget = nil
+
+local function startStayOnTop(target)
+    if stayOnTopConn then
+        stayOnTopConn:Disconnect()
+        stayOnTopConn = nil
+    end
+    stayOnTopTarget = target
+    stayOnTopConn = RunService.Heartbeat:Connect(function()
+        pcall(function()
+            if not stayOnTopTarget then return end
+            local tChar = stayOnTopTarget.Character
+            if not tChar then return end
+            local tHRP = tChar:FindFirstChild("HumanoidRootPart")
+            if not tHRP then return end
+            local myChar = lp.Character
+            if not myChar then return end
+            local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+            if not myHRP then return end
+            -- Stay 5 studs above their HRP (above head)
+            myHRP.CFrame = CFrame.new(
+                tHRP.Position + Vector3.new(0, 5, 0)
+            )
+        end)
+    end)
+end
+
+local function stopStayOnTop()
+    if stayOnTopConn then
+        stayOnTopConn:Disconnect()
+        stayOnTopConn = nil
+    end
+    stayOnTopTarget = nil
+end
+
+local function teleportToPlayer(player)
+    if not isPlayerInGame(player) then
+        Library:Notify(player.Name .. " is in lobby — skipped!", 3)
+        return false
+    end
+    local char   = player.Character
+    local myChar = lp.Character
+    if not char or not myChar then return false end
+    local tHRP = char:FindFirstChild("HumanoidRootPart")
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not tHRP or not myHRP then return false end
+
+    -- TP to top of their head
+    myHRP.CFrame = CFrame.new(tHRP.Position + Vector3.new(0, 5, 0))
+
+    if tpConfig.stayOnTop then
+        startStayOnTop(player)
+    end
+
+    Library:Notify("Teleported to " .. player.Name, 2)
+    return true
+end
+
+TpLeft:AddDropdown("TpTargetPlayer", {
+    Text       = "Select Player",
+    Values     = getPlayerList(),
+    Default    = 1,
+    Multi      = false,
+    Searchable = true,
+    Tooltip    = "Player to teleport to",
+    Callback   = function(val)
+        tpConfig.autoTarget = val
+    end,
+})
+
+TpLeft:AddButton({
+    Text = "Refresh Player List",
+    Func = function()
+        Options.TpTargetPlayer:SetValues(getPlayerList())
+        Library:Notify("Player list refreshed!", 2)
+    end,
+})
+
+TpLeft:AddButton({
+    Text = "Teleport Now",
+    Func = function()
+        local targetName = Options.TpTargetPlayer.Value
+        if not targetName or targetName == "" then
+            Library:Notify("Select a player first!", 2)
+            return
+        end
+        local target = Players:FindFirstChild(targetName)
+        if not target then
+            Library:Notify("Player not found!", 2)
+            return
+        end
+        teleportToPlayer(target)
+    end,
+})
+
+TpLeft:AddToggle("StayOnTop", {
+    Text     = "Stay On Top Of Player",
+    Default  = true,
+    Tooltip  = "Continuously stays above target player head",
+    Callback = function(val)
+        tpConfig.stayOnTop = val
+        if not val then stopStayOnTop() end
+    end,
+})
+
+TpLeft:AddButton({
+    Text = "Stop Staying On Top",
+    Func = function()
+        stopStayOnTop()
+        Library:Notify("Stopped staying on top!", 2)
+    end,
+})
+
+TpLeft:AddDivider()
+
+TpLeft:AddToggle("AutoTP", {
+    Text     = "Auto Teleport Loop",
+    Default  = false,
+    Tooltip  = "Keeps teleporting to selected player on a loop",
+    Callback = function(val)
+        tpConfig.autoTP = val
+        if val then
+            autoTPThread = task.spawn(function()
+                while tpConfig.autoTP do
+                    local targetName = Options.TpTargetPlayer.Value
+                    if targetName and targetName ~= "" then
+                        local target = Players:FindFirstChild(targetName)
+                        if target then teleportToPlayer(target) end
+                    end
+                    task.wait(tpConfig.autoDelay)
+                end
+            end)
+        else
+            if autoTPThread then
+                pcall(task.cancel, autoTPThread)
+                autoTPThread = nil
+            end
+            stopStayOnTop()
+        end
+    end,
+})
+
+TpRight:AddSlider("AutoTPDelay", {
+    Text     = "Auto TP Delay",
+    Default  = 10,
+    Min      = 1,
+    Max      = 50,
+    Rounding = 0,
+    Suffix   = "x0.1s",
+    Tooltip  = "Delay between auto teleports",
+    Callback = function(val)
+        tpConfig.autoDelay = val * 0.1
+    end,
+})
+
+TpRight:AddToggle("VisibleCheck", {
+    Text     = "In-Game Check (Skip Lobby)",
+    Default  = true,
+    Tooltip  = "Only TP to players in game not lobby",
+    Callback = function(val)
+        tpConfig.onlyInGame = val
+    end,
+})
+
+TpRight:AddLabel(
+    "In-Game Check skips\nplayers still in lobby.\n\nStay On Top keeps\nyou above their head\ncontinuously.",
+    true
+)
+
+-- ============================================================
+--   TAB 6 — HITBOX
+-- ============================================================
+
+local HitboxLeft  = Tabs.Hitbox:AddLeftGroupbox("Hitbox Expander")
+local HitboxRight = Tabs.Hitbox:AddRightGroupbox("Settings")
+
+local hitboxConfig = {
+    enabled      = false,
+    size         = 10,
+    part         = "HitboxHead",
+    transparency = 0.8,
+    showESP      = true,
+}
+
+local originalSizes = {}
+local hitboxConn    = nil
+
+local function getHitboxPart(player)
+    local char = workspace:FindFirstChild(player.Name)
+    if not char then return nil end
+    local hitbox = char:FindFirstChild(hitboxConfig.part)
+    if not hitbox then return nil end
+    if not hitbox:IsA("BasePart") then return nil end
+    return hitbox
+end
+
+local function storeOriginalSize(player, hitbox)
+    if originalSizes[player.Name] then return end
+    local attrSize = hitbox:GetAttribute("OriginalSize")
+    if attrSize then
+        originalSizes[player.Name] = attrSize
+        return
+    end
+    local sizeVal = hitbox:FindFirstChild("OriginalSize")
+    if sizeVal then
+        originalSizes[player.Name] = sizeVal.Value
+        return
+    end
+    originalSizes[player.Name] = hitbox.Size
+end
+
+local function expandHitbox(player)
+    if player == lp then return end
+    local hitbox = getHitboxPart(player)
+    if not hitbox then return end
+    storeOriginalSize(player, hitbox)
+    local newSize = Vector3.new(
+        hitboxConfig.size,
+        hitboxConfig.size,
+        hitboxConfig.size
+    )
+    pcall(function()
+        hitbox.Size = newSize
+        if hitboxConfig.showESP then
+            hitbox.Transparency  = hitboxConfig.transparency
+            hitbox.Color         = Color3.fromRGB(255, 50, 50)
+            hitbox.Material      = Enum.Material.Neon
+            hitbox.CanCollide    = false
+            hitbox.CastShadow    = false
+        else
+            hitbox.Transparency  = 1
+        end
+    end)
+end
+
+local function restoreHitbox(player)
+    local hitbox = getHitboxPart(player)
+    if not hitbox then return end
+    local original = originalSizes[player.Name]
+    if not original then return end
+    pcall(function()
+        hitbox.Size         = original
+        hitbox.Transparency = 1
+        hitbox.Material     = Enum.Material.SmoothPlastic
+        hitbox.Color        = Color3.fromRGB(255, 255, 255)
+    end)
+    originalSizes[player.Name] = nil
+end
+
+local function expandAll()
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= lp then
+            pcall(function() expandHitbox(player) end)
+        end
+    end
+end
+
+local function restoreAll()
+    for _, player in pairs(Players:GetPlayers()) do
+        pcall(function() restoreHitbox(player) end)
+    end
+    originalSizes = {}
+end
+
+HitboxLeft:AddToggle("HitboxEnabled", {
+    Text     = "Enable Hitbox Expander",
+    Default  = false,
+    Tooltip  = "Expands HitboxHead on all players",
+    Risky    = true,
+    Callback = function(val)
+        hitboxConfig.enabled = val
+        if val then
+            expandAll()
+            hitboxConn = RunService.Heartbeat:Connect(function()
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= lp then
+                        pcall(function()
+                            local hitbox = getHitboxPart(player)
+                            if hitbox then
+                                local targetSize = Vector3.new(
+                                    hitboxConfig.size,
+                                    hitboxConfig.size,
+                                    hitboxConfig.size
+                                )
+                                if hitbox.Size ~= targetSize then
+                                    expandHitbox(player)
+                                end
+                            end
+                        end)
+                    end
+                end
+            end)
+            Library:Notify("Hitbox Expander Active! Size: "
+                .. hitboxConfig.size, 3)
+        else
+            restoreAll()
+            if hitboxConn then
+                hitboxConn:Disconnect()
+                hitboxConn = nil
+            end
+            Library:Notify("Hitbox restored", 2)
+        end
+    end,
+})
+
+HitboxLeft:AddButton({
+    Text = "Expand All Now",
+    Func = function()
+        expandAll()
+        Library:Notify("All hitboxes expanded!", 2)
+    end,
+})
+
+HitboxLeft:AddButton({
+    Text = "Restore All Now",
+    Func = function()
+        restoreAll()
+        Library:Notify("All hitboxes restored!", 2)
+    end,
+})
+
+HitboxLeft:AddDivider()
+
+HitboxLeft:AddDropdown("SingleTargetHitbox", {
+    Text       = "Single Player Target",
+    Values     = getPlayerList(),
+    Default    = 1,
+    Searchable = true,
+    Tooltip    = "Expand hitbox for one player",
+    Callback   = function(_) end,
+})
+
+HitboxLeft:AddButton({
+    Text = "Expand Selected",
+    Func = function()
+        local name   = Options.SingleTargetHitbox.Value
+        local target = Players:FindFirstChild(name)
+        if not target then
+            Library:Notify("Player not found!", 2)
+            return
+        end
+        expandHitbox(target)
+        Library:Notify("Expanded " .. name .. " hitbox!", 2)
+    end,
+})
+
+HitboxLeft:AddButton({
+    Text = "Restore Selected",
+    Func = function()
+        local name   = Options.SingleTargetHitbox.Value
+        local target = Players:FindFirstChild(name)
+        if not target then
+            Library:Notify("Player not found!", 2)
+            return
+        end
+        restoreHitbox(target)
+        Library:Notify("Restored " .. name .. " hitbox!", 2)
+    end,
+})
+
+HitboxRight:AddSlider("HitboxSize", {
+    Text     = "Hitbox Size",
+    Default  = 10,
+    Min      = 1,
+    Max      = 60,
+    Rounding = 0,
+    Suffix   = " studs",
+    Tooltip  = "Size of expanded HitboxHead",
+    Callback = function(val)
+        hitboxConfig.size = val
+        if hitboxConfig.enabled then expandAll() end
+    end,
+})
+
+HitboxRight:AddToggle("HitboxVisual", {
+    Text     = "Show Hitbox Visual",
+    Default  = true,
+    Tooltip  = "Makes hitbox visible (red)",
+    Callback = function(val)
+        hitboxConfig.showESP = val
+        if hitboxConfig.enabled then expandAll() end
+    end,
+})
+
+HitboxRight:AddSlider("HitboxTransparency", {
+    Text     = "Hitbox Transparency",
+    Default  = 8,
+    Min      = 0,
+    Max      = 10,
+    Rounding = 0,
+    Suffix   = "x0.1",
+    Tooltip  = "How transparent the hitbox looks",
+    Callback = function(val)
+        hitboxConfig.transparency = val * 0.1
+        if hitboxConfig.enabled then expandAll() end
+    end,
+})
+
+HitboxRight:AddDropdown("HitboxPartName", {
+    Text     = "Hitbox Part Target",
+    Values   = { "HitboxHead", "HitboxBody", "HitboxLegs" },
+    Default  = 1,
+    Multi    = false,
+    Tooltip  = "Which hitbox part to expand",
+    Callback = function(val)
+        if hitboxConfig.enabled then restoreAll() end
+        hitboxConfig.part = val
+        if hitboxConfig.enabled then expandAll() end
+    end,
+})
+
+-- Respawn hooks
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        if hitboxConfig.enabled and player ~= lp then
+            task.wait(0.5)
+            pcall(function() expandHitbox(player) end)
+        end
+    end)
+end)
+
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= lp then
+        player.CharacterAdded:Connect(function()
+            if hitboxConfig.enabled then
+                task.wait(0.5)
+                pcall(function()
+                    originalSizes[player.Name] = nil
+                    expandHitbox(player)
+                end)
+            end
+        end)
+    end
+end
+
+-- ============================================================
+--   TAB 7 — UI SETTINGS
+-- ============================================================
+
+local MenuGroup = Tabs.UISettings:AddLeftGroupbox("Menu")
+
+MenuGroup:AddToggle("KeybindMenuOpen", {
+    Default  = Library.KeybindFrame.Visible,
+    Text     = "Open Keybind Menu",
+    Callback = function(val)
+        Library.KeybindFrame.Visible = val
+    end,
+})
+
+MenuGroup:AddToggle("ShowCustomCursor", {
+    Text     = "Custom Cursor",
+    Default  = true,
+    Callback = function(val)
+        Library.ShowCustomCursor = val
+    end,
+})
+
+MenuGroup:AddDivider()
+
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
+    Default = "RightShift",
+    NoUI    = true,
+    Text    = "Menu Keybind",
+})
+
+MenuGroup:AddButton({
+    Text = "Unload",
+    Func = function()
+        -- Clean up everything
+        stopVoidSpam()
+        stopVelSpike()
+        stopAntiAim()
+        stopStayOnTop()
+        restoreAll()
+        cleanTripESP()
+
+        if noCooldownConn    then noCooldownConn:Disconnect()    end
+        if instantReloadConn then instantReloadConn:Disconnect() end
+        if infiniteAmmoConn  then infiniteAmmoConn:Disconnect()  end
+        if rapidBurstConn    then rapidBurstConn:Disconnect()    end
+        if instantChargeConn then instantChargeConn:Disconnect() end
+        if infiniteDaggersConn then infiniteDaggersConn:Disconnect() end
+        if rapidDaggerConn   then rapidDaggerConn:Disconnect()   end
+        if spoofLevelConn    then spoofLevelConn:Disconnect()    end
+        if tripDetectConn    then tripDetectConn:Disconnect()    end
+        if hitboxConn        then hitboxConn:Disconnect()        end
+        if katanaLoopThread  then pcall(task.cancel, katanaLoopThread) end
+
+        Library:Unload()
+    end,
+})
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+-- ============================================================
+--   Watermark
+-- ============================================================
+
+Library:SetWatermarkVisibility(true)
+
+local frameTimer = tick()
+local frameCount = 0
+local currentFPS = 60
+
+local function getPing()
+    local ok, val = pcall(function()
+        return math.floor(
+            game:GetService("Stats")
+                .Network.ServerStatsItem["Data Ping"]:GetValue()
+        )
+    end)
+    return ok and val or 0
+end
+
+RunService.RenderStepped:Connect(function()
+    frameCount += 1
+    if tick() - frameTimer >= 1 then
+        currentFPS = frameCount
+        frameTimer = tick()
+        frameCount = 0
+    end
+    Library:SetWatermark(
+        ("Rivals Hub | %d fps | %d ms"):format(currentFPS, getPing())
+    )
+end)
+
+Library:OnUnload(function()
+    Library.Unloaded = true
+end)
+
+-- ============================================================
+--   Save / Theme
+-- ============================================================
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+ThemeManager:SetFolder("RivalsHub")
+SaveManager:SetFolder("RivalsHub/Rivals")
+
+SaveManager:BuildConfigSection(Tabs.UISettings)
+ThemeManager:ApplyToTab(Tabs.UISettings)
+
+SaveManager:LoadAutoloadConfig()
+
+-- ============================================================
+--   Welcome
+-- ============================================================
+
+Library:Notify("Rivals Hub Loaded! RightShift to toggle menu.", 5)
